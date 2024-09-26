@@ -5,8 +5,8 @@ Package for fetching sequence from twobit files from local paths or URLs.
 ## Usage
 
 To fetch sequence for a genomic region create a TwoBit object with either a local file path or url.  Sequence
-is fetched with the `sequence` function which takes chromosome name, start, and end coordinates.
-The UCSC coordinate convention is used.
+is fetched with the `fetch` function which takes chromosome name, start, and end coordinates.
+The UCSC coordinate convention is used (0 start, half-open).
 
 
 Local file
