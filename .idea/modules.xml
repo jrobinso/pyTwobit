@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/pyTwoBit.iml" filepath="$PROJECT_DIR$/pyTwoBit.iml" />
+      <module fileurl="file://$PROJECT_DIR$/pyTwobit.iml" filepath="$PROJECT_DIR$/pyTwobit.iml" />
     </modules>
   </component>
 </project>

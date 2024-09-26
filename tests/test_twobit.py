@@ -50,7 +50,7 @@ class TwoBitLocalTest(unittest.TestCase):
 class TwoBitRemoteTest(unittest.TestCase):
 
     def test_twobit_sequence(self):
-        url = "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.2bit"
+        url = "https://igv.org/genomes/data/hg38/hg38.2bit"
         twobit = TwoBit(url)
 
         #Non-masked no "N" region  chr1:11,830-11,869

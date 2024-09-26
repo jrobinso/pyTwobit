@@ -33,7 +33,7 @@ Remote file
 
 from pytwobit import TwoBit
 
-twobit = TwoBit("https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.2bit")
+twobit = TwoBit("https://igv.org/genomes/data/hg38/hg38.2bit")
 seq = twobit.fetch("chr1", 120565294, 120565335)  # -> "TATGAACTTTTGTTCGTTGGTgctcagtcctagaccctttt"
 
 ```
