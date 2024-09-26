@@ -1,5 +1,5 @@
 """
-twobitreader
+pyTwoBit
 
 """
 

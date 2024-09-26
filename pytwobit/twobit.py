@@ -1,3 +1,4 @@
+from bisect import bisect_left
 from urllib.parse import urlparse
 import math
 from .remote_file import RemoteFile
@@ -13,7 +14,7 @@ for i in range(0, 256):
         twoBit[i & 3])
 
 maskedByteTo4Bases = []
-for i in range(0, 255):
+for i in range(0, 256):
     maskedByteTo4Bases.append(byteTo4Bases[i].lower())
 
 
@@ -33,6 +34,7 @@ class TwoBit:
     def check_magic(self, dataview):
         magic = dataview.uint32()
         if magic != 0x1A412743:
+            self.byte_order = 'big'
             dataview.byte_order = 'big'
             dataview.position = 0
             magic = dataview.uint32()
@@ -47,7 +49,7 @@ class TwoBit:
 
             self.byte_order = 'little'  # Assumption, will be checked
 
-            dataview = self.get_dataview(file_handle, 0, 1024)
+            dataview = self._dataview(file_handle, 0, 1024)
 
             self.check_magic(dataview) # Checks magic, side effect - advances dataview cursor
 
@@ -64,13 +66,13 @@ class TwoBit:
                 if dataview.available() < 1:
                     ptr = ptr + dataview.position
                     size = (self.sequenceCount - i) * estNameLength
-                    dataview = self.get_dataview(file_handle, ptr, size)
+                    dataview = self._dataview(file_handle, ptr, size)
 
                 strlen = dataview.getByte()
                 if dataview.available() < strlen + 5:
                     ptr = ptr + dataview.position
                     size = (self.sequenceCount - i) * estNameLength
-                    dataview = self.get_dataview(file_handle, ptr, size)
+                    dataview = self._dataview(file_handle, ptr, size)
 
                 name = dataview.getString(strlen)
                 offset = dataview.uint32()
@@ -78,7 +80,7 @@ class TwoBit:
 
             self.index = index
 
-    def getSequenceRecord(self, seqName):
+    def sequence_record(self, seqName):
 
         with self.open_file_handle() as file_handle:
 
@@ -88,15 +90,15 @@ class TwoBit:
                     return None
 
                 offset = self.index[seqName]
-                dataview = self.get_dataview(file_handle, offset, 8)
+                dataview = self._dataview(file_handle, offset, 8)
                 dnaSize = dataview.uint32()
                 nBlockCount = dataview.uint32()
 
                 offset = offset + 8
 
-                # Read "N" blocks and # of mask blocks
+                # Read "N" blocks
                 size = nBlockCount * (4 + 4) + 4
-                dataview = self.get_dataview(file_handle, offset, size)
+                dataview = self._dataview(file_handle, offset, size)
 
                 nBlockStarts = []
                 for i in range(0, nBlockCount):
@@ -106,12 +108,12 @@ class TwoBit:
                 for i in range(0, nBlockCount):
                     nBlockSizes.append(dataview.uint32())
 
+                # Read "mask" blocks
                 maskBlockCount = dataview.uint32()
                 offset += size
 
-                # Read "mask" blocks
                 size = maskBlockCount * (4 + 4) + 4
-                dataview = self.get_dataview(file_handle, offset, size)
+                dataview = self._dataview(file_handle, offset, size)
 
                 maskBlockStarts = []
                 for i in range(0, maskBlockCount):
@@ -124,15 +126,11 @@ class TwoBit:
                 # Transform "N" and "mask" block data into something more useful
                 nBlocks = []
                 for i in range(0, nBlockCount):
-                    nBlocks.append({"start": nBlockStarts[i],
-                                    "size": nBlockSizes[i],
-                                    "end": nBlockStarts[i] + nBlockSizes[i]})
+                    nBlocks.append(Block(nBlockStarts[i],nBlockSizes[i]))
 
                 maskBlocks = []
                 for i in range(0, maskBlockCount):
-                    maskBlocks.append({"start": maskBlockStarts[i],
-                                       "size": maskBlockSizes[i],
-                                       "end": maskBlockStarts[i] + maskBlockSizes[i]})
+                    maskBlocks.append(Block(maskBlockStarts[i],maskBlockSizes[i]))
 
                 reserved = dataview.uint32()
                 if reserved != 0:
@@ -151,20 +149,25 @@ class TwoBit:
 
             return self.meta_index[seqName]
 
-    def readSequence(self, seqName, regionStart, regionEnd=None):
+    def fetch(self, seqName, regionStart=None, regionEnd=None):
 
         with self.open_file_handle() as file_handle:
-            if regionStart < 0:
-                raise 'regionStart cannot be less than 0'
 
-            record = self.getSequenceRecord(seqName)
+            record = self.sequence_record(seqName)
             if record is None:
                 return None
+
+            if regionStart is None:
+                regionStart = 0
+            elif regionStart < 0:
+                raise 'regionStart cannot be less than 0'
+
 
             # end defaults to the end of the sequence
             if regionEnd is None or regionEnd > record["dnaSize"]:
                 regionEnd = record["dnaSize"]
 
+            # Get the "N" and "mask" blocks
             nBlocks = getOverlappingBlocks(regionStart, regionEnd, record["nBlocks"])
             maskBlocks = getOverlappingBlocks(regionStart, regionEnd, record["maskBlocks"])
 
@@ -182,18 +185,17 @@ class TwoBit:
 
                 # check if we are currently masked
                 # trim masks to the left of genomic position
-                n = next((i for i, block in enumerate(maskBlocks) if block["end"] > genomicPosition), None)
+                n = next((i for i, block in enumerate(maskBlocks) if block.end > genomicPosition), None)
                 if n is not None and n > 0:
                     maskBlocks = maskBlocks[n:]
 
-                baseIsMasked = len(maskBlocks) > 0 and maskBlocks[0]["start"] <= genomicPosition and maskBlocks[0][
-                    "end"] > genomicPosition
+                baseIsMasked = len(maskBlocks) > 0 and maskBlocks[0].start <= genomicPosition and maskBlocks[0].end > genomicPosition
 
                 # process the N block if we have one.  Masked "N" ("n")  is not supported
-                if len(nBlocks) > 0 and genomicPosition >= nBlocks[0]["start"] and genomicPosition < nBlocks[0]["end"]:
+                if len(nBlocks) > 0 and genomicPosition >= nBlocks[0].start and genomicPosition < nBlocks[0].end:
                     currentNBlock = nBlocks[0]
                     nBlocks = nBlocks[1:]
-                    n_count = min(currentNBlock["end"], regionEnd) - genomicPosition
+                    n_count = min(currentNBlock.end, regionEnd) - genomicPosition
                     sequenceBases.extend(['N'] * n_count)
                     genomicPosition += n_count
                     genomicPosition = genomicPosition - 1
@@ -212,18 +214,25 @@ class TwoBit:
             return seqstring
 
 
-    def get_dataview(self, file_handle, offset, size):
+    def _dataview(self, file_handle, offset, size):
         file_handle.seek(offset)
         bytes = file_handle.read(size)
         return DataView(bytes, self.byte_order)
 
+class Block:
+    def __init__(self, start, size):
+        self.start = start
+        self.end = start + size
+
 
 def getOverlappingBlocks(start, end, blocks):
+
     overlappingBlocks = []
+
     for block in blocks:
-        if block["start"] > end:
+        if block.start > end:
             break
-        elif block["end"] < start:
+        elif block.end < start:
             continue
         else:
             overlappingBlocks.append(block)
