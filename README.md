@@ -1,6 +1,12 @@
-# pyTwoBit
+# pyTwobit
 
 Package for fetching sequence from twobit files from local paths or URLs. 
+
+## Installing
+
+```
+pip install pyTwobit
+```
 
 ## Usage
 
